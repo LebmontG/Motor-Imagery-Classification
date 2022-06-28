@@ -1,7 +1,21 @@
 import torch
 import torch.nn as nn
+import numpy as np
 import torch.nn.functional as F
+from scipy.linalg import fractional_matrix_power
 
+def EA(X):
+    N = X.shape[0]
+    R=sum([np.dot(X[i],X[i].T) for i in range(N)])
+    R_ = fractional_matrix_power(R/N, -1/2)
+    return np.array([np.dot(R_,X[i]) for i in range(N)])
+
+def L2Loss(model):
+    l2_loss = torch.tensor(0.0,requires_grad = True)
+    for name,parma in model.named_parameters():
+        if 'bias' not in name:
+            l2_loss = l2_loss + (0.5*0.1* torch.sum(torch.pow(parma,2)))
+    return l2_loss
 
 class EEGNet(nn.Module):
     def __init__(self,inp_dim=[13,750],chns=[12,24,24],
@@ -59,8 +73,9 @@ class EEGNet(nn.Module):
             nn.AvgPool2d((1,pooling[1])), # (chns[2], 1, T//32)
             nn.Dropout(self.drop_out)
         )
-        dim=chns[1]*((inp_dim[1]-k_size+1)//pooling[0]//pooling[1])
-        self.out = nn.Linear(dim,classes_num)
+        dim=chns[2]*((inp_dim[1]-k_size+1)//pooling[0]//pooling[1])
+        self.out1 = nn.Linear(dim,dim//2)
+        self.out2 = nn.Linear(dim//2,classes_num)
     
     def forward(self, x):
         x = self.block_1(x)
@@ -71,5 +86,5 @@ class EEGNet(nn.Module):
         #print(x.shape);input() # [1,chn[1], 1,~//pooling[1]]
         
         x = x.view(x.size(0), -1)
-        x = self.out(x)
+        x = self.out2(self.out1(x))
         return F.softmax(x, dim=1), x   # return x for visualization
